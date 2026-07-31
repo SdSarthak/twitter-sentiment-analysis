@@ -62,7 +62,7 @@ negative     32       32.32
 neutral      29       29.29
 positive     38       38.38
 
-mean sentiment score : 0.0386
+mean sentiment score : 0.0398
 
 Engagement by sentiment:
            Likes  Retweets  tweets
