@@ -16,6 +16,7 @@ Scores are normalised to ``[-1.0, 1.0]``.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import Iterable, Sequence
 
@@ -205,6 +206,12 @@ NORMALISATION_ALPHA = 15.0
 _EMOTICON_RE = re.compile(
     "|".join(re.escape(token) for token in sorted(EMOTICON_VALENCE, key=len, reverse=True))
 )
+_IDIOM_RE = re.compile(
+    r"\b(?:"
+    + "|".join(re.escape(phrase) for phrase in sorted(IDIOMS, key=len, reverse=True))
+    + r")\b",
+    re.IGNORECASE,
+)
 _TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z']*|\d+(?:\.\d+)?")
 _PUNCT_STRIP = "\"'`.,;:!?()[]{}<>*_~-"
 
@@ -243,12 +250,21 @@ def _emoji_score(text: str) -> float:
     return total
 
 
-def _idiom_score(lowered: str) -> float:
+def _apply_idioms(text: str) -> tuple[str, float]:
+    """Consume idiom spans, returning the remaining text and their valence.
+
+    Idioms *replace* their component words rather than stacking on top of them:
+    without this, ``not good`` would earn both the idiom's -1.6 and a negated
+    ``good``, ending up more negative than ``good`` is positive.
+    """
     total = 0.0
-    for phrase, valence in IDIOMS.items():
-        if phrase in lowered:
-            total += valence
-    return total
+
+    def _consume(match: re.Match[str]) -> str:
+        nonlocal total
+        total += IDIOMS[match.group(0).lower()]
+        return " "
+
+    return _IDIOM_RE.sub(_consume, text), total
 
 
 def _word_scores(tokens: Sequence[str]) -> float:
@@ -283,12 +299,21 @@ def _word_scores(tokens: Sequence[str]) -> float:
     return total
 
 
-def _prepare(text: object) -> tuple[str, list[str]]:
+@dataclass(frozen=True)
+class _Prepared:
+    """Intermediate state shared by :func:`score_text` and :func:`explain`."""
+
+    cleaned: str
+    remaining: str
+    tokens: list[str]
+    idiom_score: float
+
+
+def _prepare(text: object) -> _Prepared:
     raw = normalise_unicode(text if text is not None else "")
-    stripped = _strip_noise(raw)
-    stripped = REPEATED_CHAR_RE.sub(r"\1\1", stripped)
-    tokens = _TOKEN_RE.findall(stripped)
-    return stripped, tokens
+    stripped = REPEATED_CHAR_RE.sub(r"\1\1", _strip_noise(raw))
+    remaining, idiom_score = _apply_idioms(stripped)
+    return _Prepared(stripped, remaining, _TOKEN_RE.findall(remaining), idiom_score)
 
 
 def score_text(text: object, *, scorer: str = "builtin") -> float:
@@ -305,16 +330,16 @@ def score_text(text: object, *, scorer: str = "builtin") -> float:
 
     if text is None:
         return 0.0
-    stripped, tokens = _prepare(text)
-    if not stripped:
+    prepared = _prepare(text)
+    if not prepared.cleaned:
         return 0.0
 
-    total = _word_scores(tokens)
-    total += _idiom_score(stripped.lower())
-    total += _emoji_score(stripped)
+    total = _word_scores(prepared.tokens)
+    total += prepared.idiom_score
+    total += _emoji_score(prepared.cleaned)
 
     if total != 0.0:
-        amplifier = _punctuation_amplifier(stripped)
+        amplifier = _punctuation_amplifier(prepared.cleaned)
         total += amplifier if total > 0 else -amplifier
 
     return round(_normalise(total), 4)
@@ -344,15 +369,15 @@ def _vader_analyzer():  # pragma: no cover - requires an optional NLTK download
 
 def explain(text: object) -> dict[str, object]:
     """Break a score into its contributing parts -- handy when tuning labels."""
-    stripped, tokens = _prepare(text)
-    lowered = [token.lower().strip(_PUNCT_STRIP) for token in tokens]
+    prepared = _prepare(text)
+    lowered = [token.lower().strip(_PUNCT_STRIP) for token in prepared.tokens]
     matched = {word: VALENCE[word] for word in lowered if word in VALENCE}
     return {
-        "cleaned": stripped,
+        "cleaned": prepared.cleaned,
         "matched_words": matched,
-        "word_score": round(_word_scores(tokens), 4),
-        "idiom_score": round(_idiom_score(stripped.lower()), 4),
-        "emoji_score": round(_emoji_score(stripped), 4),
-        "punctuation_amplifier": round(_punctuation_amplifier(stripped), 4),
+        "word_score": round(_word_scores(prepared.tokens), 4),
+        "idiom_score": round(prepared.idiom_score, 4),
+        "emoji_score": round(_emoji_score(prepared.cleaned), 4),
+        "punctuation_amplifier": round(_punctuation_amplifier(prepared.cleaned), 4),
         "score": score_text(text),
     }

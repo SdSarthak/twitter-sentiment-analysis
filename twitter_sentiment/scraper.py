@@ -231,6 +231,8 @@ def scrape_query(
 
     settings = config or ScraperConfig.from_env()
     search_term = query or settings.query
+    # Fail on missing credentials before paying the cost of launching Chrome.
+    settings.require_login()
     driver = build_driver(settings)
     try:
         login(driver, settings)

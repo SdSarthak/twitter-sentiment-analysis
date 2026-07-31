@@ -52,8 +52,12 @@ def _build_estimator(name: str, random_state: int):
         return LinearSVC(C=0.5, class_weight="balanced", random_state=random_state)
     if name == "random_forest":
         return RandomForestClassifier(
-            n_estimators=300,
-            min_samples_leaf=2,
+            n_estimators=400,
+            # Sparse bag-of-words features are individually weak, so the default
+            # sqrt(n_features) subsample starves each split on short texts.
+            # Considering 30% of the vocabulary per split keeps trees informative.
+            max_features=0.3,
+            min_samples_leaf=1,
             class_weight="balanced_subsample",
             random_state=random_state,
             n_jobs=-1,
