@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "twitter-sentiment"
+version = "1.0.0"
+description = "Collect, label, model and report on tweet sentiment"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Sarthak Doshi" }]
+dependencies = [
+    "pandas>=2.0,<3.0",
+    "numpy>=1.24,<3.0",
+    "scikit-learn>=1.3,<2.0",
+    "nltk>=3.8,<4.0",
+    "joblib>=1.3,<2.0",
+    "matplotlib>=3.7,<4.0",
+    "seaborn>=0.12,<1.0",
+]
+
+[project.optional-dependencies]
+scrape = ["selenium>=4.15,<5.0", "webdriver-manager>=4.0,<5.0", "python-dotenv>=1.0,<2.0"]
+dev = ["pytest>=7.4,<9.0"]
+
+[project.scripts]
+twitter-sentiment = "twitter_sentiment.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["twitter_sentiment*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning"]
